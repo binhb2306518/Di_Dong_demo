@@ -1,15 +1,15 @@
 # CT484 Project
 
-Học kỳ x, Năm học 20xx-20xx
+Học kỳ 1, Năm học 2026-2027
 
-**Tên dự án**:
+**Tên dự án**: 
 
-**MSSV1**: 
+**MSSV1**: B2306518
 
-**Họ tên SV1**:
+**Họ tên SV1**: Nguyễn Thanh Bình
 
-**MSSV2**: 
+**MSSV2**: B2306605
 
-**Họ tên SV2**:
+**Họ tên SV2**: Lê Văn Xuyên
 
-**Lớp học phần**:
+**Lớp học phần**: CT48401

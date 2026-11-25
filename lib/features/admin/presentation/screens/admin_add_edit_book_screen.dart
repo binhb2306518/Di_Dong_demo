@@ -1,14 +1,17 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
-import '../../../../core/constants/app_colors.dart';
-import '../../../books/data/models/book_model.dart';
-import '../../../books/data/mock_book_data.dart';
-import '../../../books/presentation/bloc/book_cubit.dart';
+import 'package:ct484project/core/constants/app_colors.dart';
+import 'package:ct484project/features/books/data/models/book_model.dart';
+import 'package:ct484project/features/books/presentation/bloc/book_cubit.dart';
 
-/// Màn hình Admin – Thêm / Sửa sách lưu trực tiếp vào SQLite
+/// Màn hình Admin – Thêm / Sửa sách – Image Picker thay cho URL ảnh
 class AdminAddEditBookScreen extends StatefulWidget {
   final Book? book; // null = thêm mới, not-null = chỉnh sửa
   const AdminAddEditBookScreen({super.key, this.book});
@@ -19,6 +22,8 @@ class AdminAddEditBookScreen extends StatefulWidget {
 
 class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
   final _formKey = GlobalKey<FormState>();
+  final ImagePicker _picker = ImagePicker();
+
   late TextEditingController _titleCtrl;
   late TextEditingController _authorCtrl;
   late TextEditingController _priceCtrl;
@@ -26,13 +31,28 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
   late TextEditingController _stockCtrl;
   late TextEditingController _publisherCtrl;
   late TextEditingController _pageCountCtrl;
-  late TextEditingController _coverImageCtrl;
   late TextEditingController _descCtrl;
   late TextEditingController _sampleCtrl;
   String _selectedCategory = 'Văn học';
   bool _isLoading = false;
 
+  /// Ảnh bìa chọn từ thiết bị
+  File? _coverImageFile;
+  /// URL ảnh bìa hiện có (nếu đang sửa)
+  String _existingCoverUrl = '';
+
   bool get _isEdit => widget.book != null;
+
+  static const _categories = [
+    'Văn học',
+    'Kinh tế',
+    'Kỹ năng sống',
+    'Công nghệ',
+    'Truyện tranh',
+    'Thiếu nhi',
+    'Lịch sử',
+    'Ngoại ngữ',
+  ];
 
   @override
   void initState() {
@@ -40,16 +60,27 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
     final b = widget.book;
     _titleCtrl = TextEditingController(text: b?.title ?? '');
     _authorCtrl = TextEditingController(text: b?.author ?? '');
-    _priceCtrl = TextEditingController(text: b?.price.toInt().toString() ?? '');
-    _originalPriceCtrl =
-        TextEditingController(text: b?.originalPrice.toInt().toString() ?? '');
-    _stockCtrl = TextEditingController(text: b?.stockQuantity.toString() ?? '10');
+    _priceCtrl =
+        TextEditingController(text: b != null ? b.price.toInt().toString() : '');
+    _originalPriceCtrl = TextEditingController(
+        text: b != null ? b.originalPrice.toInt().toString() : '');
+    _stockCtrl =
+        TextEditingController(text: b != null ? b.stockQuantity.toString() : '10');
     _publisherCtrl = TextEditingController(text: b?.publisher ?? '');
-    _pageCountCtrl = TextEditingController(text: b?.pageCount.toString() ?? '200');
-    _coverImageCtrl = TextEditingController(text: b?.coverImage ?? '');
+    _pageCountCtrl =
+        TextEditingController(text: b != null ? b.pageCount.toString() : '200');
     _descCtrl = TextEditingController(text: b?.description ?? '');
     _sampleCtrl = TextEditingController(text: b?.sampleContent ?? '');
     _selectedCategory = b?.category ?? 'Văn học';
+    _existingCoverUrl = b?.coverImage ?? '';
+
+    // Nếu coverImage là file path local
+    if (_existingCoverUrl.startsWith('/')) {
+      final file = File(_existingCoverUrl);
+      if (file.existsSync()) {
+        _coverImageFile = file;
+      }
+    }
   }
 
   @override
@@ -61,17 +92,89 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
     _stockCtrl.dispose();
     _publisherCtrl.dispose();
     _pageCountCtrl.dispose();
-    _coverImageCtrl.dispose();
     _descCtrl.dispose();
     _sampleCtrl.dispose();
     super.dispose();
+  }
+
+  /// Chọn ảnh bìa sách từ thư viện hoặc camera
+  Future<void> _pickCoverImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Chọn ảnh bìa sách',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded,
+                    color: AppColors.primary),
+                title: const Text('Chọn từ thư viện ảnh'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_rounded,
+                    color: AppColors.secondary),
+                title: const Text('Chụp ảnh mới'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (source != null) {
+      final picked = await _picker.pickImage(
+        source: source,
+        maxWidth: 600,
+        maxHeight: 900,
+        imageQuality: 85,
+      );
+      if (picked != null) {
+        // Copy ảnh vào thư mục app để lưu trữ lâu dài
+        final appDir = await getApplicationDocumentsDirectory();
+        final coverDir = Directory(p.join(appDir.path, 'book_covers'));
+        if (!coverDir.existsSync()) {
+          coverDir.createSync(recursive: true);
+        }
+        final fileName =
+            'cover_${DateTime.now().millisecondsSinceEpoch}${p.extension(picked.path)}';
+        final savedFile = await File(picked.path).copy(
+          p.join(coverDir.path, fileName),
+        );
+
+        setState(() {
+          _coverImageFile = savedFile;
+          _existingCoverUrl = savedFile.path;
+        });
+      }
+    }
+  }
+
+  /// Xóa ảnh bìa đã chọn
+  void _removeCoverImage() {
+    setState(() {
+      _coverImageFile = null;
+      _existingCoverUrl = '';
+    });
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
-    final price = double.tryParse(_priceCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+    final price =
+        double.tryParse(_priceCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
     final origPriceText = _originalPriceCtrl.text.replaceAll(',', '').trim();
     final origPrice = origPriceText.isNotEmpty
         ? (double.tryParse(origPriceText) ?? price)
@@ -84,12 +187,13 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
       discount = (((origPrice - price) / origPrice) * 100).round();
     }
 
-    // Nếu không nhập link ảnh, tạo ảnh placeholder ngẫu nhiên đẹp mắt
-    final cover = _coverImageCtrl.text.trim().isNotEmpty
-        ? _coverImageCtrl.text.trim()
-        : (widget.book?.coverImage.isNotEmpty == true
-            ? widget.book!.coverImage
-            : 'https://picsum.photos/seed/${DateTime.now().millisecondsSinceEpoch}/300/450');
+    // Xác định đường dẫn ảnh bìa
+    String coverPath = '';
+    if (_coverImageFile != null) {
+      coverPath = _coverImageFile!.path; // File local path
+    } else if (_existingCoverUrl.isNotEmpty) {
+      coverPath = _existingCoverUrl;
+    }
 
     if (_isEdit) {
       final updated = widget.book!.copyWith(
@@ -102,7 +206,7 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
         stockQuantity: stock,
         pageCount: pages,
         publisher: _publisherCtrl.text.trim(),
-        coverImage: cover,
+        coverImage: coverPath,
         description: _descCtrl.text.trim(),
         sampleContent: _sampleCtrl.text.trim(),
       );
@@ -113,7 +217,7 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã cập nhật sách "${updated.title}" thành công!'),
+            content: Text('✅ Đã cập nhật "${updated.title}" thành công!'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -131,7 +235,7 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
         stockQuantity: stock,
         pageCount: pages,
         publisher: _publisherCtrl.text.trim(),
-        coverImage: cover,
+        coverImage: coverPath,
         description: _descCtrl.text.trim(),
         sampleContent: _sampleCtrl.text.trim(),
         rating: 5.0,
@@ -144,7 +248,7 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Đã thêm sách "${newBook.title}" vào kho thành công!'),
+            content: Text('✅ Đã thêm "${newBook.title}" vào kho thành công!'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -183,80 +287,78 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Xem trước ảnh bìa
+              // ══════════════════════════════════════════
+              // ẢNH BÌA – Image Picker (BẮT BUỘC)
+              // ══════════════════════════════════════════
               Center(
-                child: Container(
-                  width: 120,
-                  height: 170,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.2),
+                child: GestureDetector(
+                  onTap: _pickCoverImage,
+                  child: Container(
+                    width: 140,
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.2),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: _buildCoverPreview(),
                     ),
                   ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: _coverImageCtrl.text.trim().isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: _coverImageCtrl.text.trim(),
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.broken_image,
-                                    size: 36, color: AppColors.textSecondary),
-                                SizedBox(height: 4),
-                                Text('Link lỗi',
-                                    style: TextStyle(fontSize: 11)),
-                              ],
-                            ),
-                          )
-                        : Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.add_photo_alternate_outlined,
-                                  size: 36,
-                                  color:
-                                      AppColors.primary.withValues(alpha: 0.5)),
-                              const SizedBox(height: 6),
-                              Text('Ảnh bìa',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.primary
-                                          .withValues(alpha: 0.5))),
-                            ],
-                          ),
-                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Nút chọn / xóa ảnh
+              Center(
+                child: Wrap(
+                  spacing: 10,
+                  children: [
+                    TextButton.icon(
+                      onPressed: _pickCoverImage,
+                      icon: const Icon(Icons.photo_library_outlined, size: 18),
+                      label: Text(_coverImageFile != null || _existingCoverUrl.isNotEmpty
+                          ? 'Chọn lại ảnh'
+                          : 'Chọn ảnh bìa'),
+                    ),
+                    if (_coverImageFile != null || _existingCoverUrl.isNotEmpty)
+                      TextButton.icon(
+                        onPressed: _removeCoverImage,
+                        icon: const Icon(Icons.delete_outline,
+                            size: 18, color: AppColors.error),
+                        label: const Text('Xóa ảnh',
+                            style: TextStyle(color: AppColors.error)),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
 
-              _buildTextField(
-                _coverImageCtrl,
-                'URL Ảnh bìa sách',
-                hintText: 'https://example.com/anh-bia.jpg (để trống nếu dùng mặc định)',
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 12),
-
+              // ══════════════════════════════════════════
+              // CÁC TRƯỜNG THÔNG TIN
+              // ══════════════════════════════════════════
               _buildTextField(_titleCtrl, 'Tên sách', required: true),
               const SizedBox(height: 12),
               _buildTextField(_authorCtrl, 'Tác giả', required: true),
               const SizedBox(height: 12),
 
-              // Category dropdown
+              // Thể loại (Dropdown)
               Text('Thể loại', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                initialValue: _selectedCategory,
+                value: _categories.contains(_selectedCategory)
+                    ? _selectedCategory
+                    : _categories.first,
                 decoration: InputDecoration(
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
-                items: MockBookData.categories
-                    .map((c) => DropdownMenuItem(
-                        value: c.name, child: Text(c.name)))
+                items: _categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
                 onChanged: (v) {
                   if (v != null) setState(() => _selectedCategory = v);
@@ -318,14 +420,108 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
     );
   }
 
+  /// Widget xem trước ảnh bìa
+  Widget _buildCoverPreview() {
+    // 1. File local đã chọn
+    if (_coverImageFile != null && _coverImageFile!.existsSync()) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.file(_coverImageFile!, fit: BoxFit.cover),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.edit, size: 14, color: Colors.white),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 2. URL ảnh mạng hiện có (khi sửa)
+    if (_existingCoverUrl.isNotEmpty && _existingCoverUrl.startsWith('http')) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          CachedNetworkImage(
+            imageUrl: _existingCoverUrl,
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) => _placeholderWidget(),
+          ),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.edit, size: 14, color: Colors.white),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 3. Đường dẫn file local hiện có (khi sửa)
+    if (_existingCoverUrl.isNotEmpty) {
+      final file = File(_existingCoverUrl);
+      if (file.existsSync()) {
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(file, fit: BoxFit.cover),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.edit, size: 14, color: Colors.white),
+              ),
+            ),
+          ],
+        );
+      }
+    }
+
+    // 4. Placeholder
+    return _placeholderWidget();
+  }
+
+  Widget _placeholderWidget() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.add_photo_alternate_outlined,
+            size: 40, color: AppColors.primary.withValues(alpha: 0.5)),
+        const SizedBox(height: 8),
+        Text(
+          'Bấm để chọn ảnh bìa',
+          style: TextStyle(
+              fontSize: 12, color: AppColors.primary.withValues(alpha: 0.5)),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
   Widget _buildTextField(
     TextEditingController controller,
     String label, {
-    String? hintText,
     bool required = false,
     bool isNumber = false,
     int maxLines = 1,
-    ValueChanged<String>? onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -336,13 +532,14 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
           controller: controller,
           maxLines: maxLines,
           keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-          onChanged: onChanged,
           decoration: InputDecoration(
-            hintText: hintText ?? 'Nhập $label',
+            hintText: 'Nhập $label',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
           validator: required
-              ? (v) => v == null || v.trim().isEmpty ? 'Vui lòng nhập $label' : null
+              ? (v) => v == null || v.trim().isEmpty
+                  ? 'Vui lòng nhập $label'
+                  : null
               : null,
         ),
       ],

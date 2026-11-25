@@ -15,7 +15,7 @@ import '../../features/auth/presentation/screens/register_screen.dart';
 import '../../features/auth/presentation/screens/profile_screen.dart';
 import '../../features/auth/presentation/screens/address_management_screen.dart';
 import '../../features/auth/presentation/cubit/auth_cubit.dart';
-import '../../features/admin/presentation/screens/admin_book_list_screen.dart';
+import '../../features/admin/presentation/screens/admin_shell_screen.dart';
 import '../../features/admin/presentation/screens/admin_add_edit_book_screen.dart';
 import '../constants/app_colors.dart';
 
@@ -39,6 +39,12 @@ final GoRouter appRouter = GoRouter(
   },
 
   routes: [
+    // ── Root redirect ──
+    GoRoute(
+      path: '/',
+      redirect: (_, __) => '/home',
+    ),
+
     // ── Shell Route (Bottom Navigation) ──
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {
@@ -166,11 +172,15 @@ final GoRouter appRouter = GoRouter(
       ),
     ),
     GoRoute(
-      path: '/admin/books',
+      path: '/admin',
       pageBuilder: (context, state) => _buildSlidePage(
         state,
-        const AdminBookListScreen(),
+        const AdminShellScreen(),
       ),
+    ),
+    GoRoute(
+      path: '/admin/books',
+      redirect: (_, __) => '/admin',
     ),
     GoRoute(
       path: '/admin/books/edit',

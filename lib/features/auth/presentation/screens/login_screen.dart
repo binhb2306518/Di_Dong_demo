@@ -49,7 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         );
         // Điều hướng thẳng vào trang Quản trị (Admin Dashboard)
-        context.go('/admin/books');
+        context.go('/admin');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

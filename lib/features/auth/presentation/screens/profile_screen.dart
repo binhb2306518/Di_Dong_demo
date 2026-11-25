@@ -177,8 +177,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _buildMenuSection(context, 'Quản trị hệ thống', [
                 _MenuItem(
                   icon: Icons.admin_panel_settings_outlined,
-                  label: 'Quản lý kho sách (Admin)',
-                  onTap: () => context.push('/admin/books'),
+                  label: 'Bảng điều khiển Admin',
+                  onTap: () => context.push('/admin'),
                   iconColor: AppColors.secondary,
                 ),
               ]),

@@ -19,6 +19,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameCtrl;
   late TextEditingController _phoneCtrl;
+  late TextEditingController _emailCtrl;
   File? _avatarFile; // Ảnh đại diện chọn từ thiết bị
   final ImagePicker _picker = ImagePicker();
   bool _isSaving = false;
@@ -29,12 +30,14 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     final user = context.read<AuthCubit>().currentUser;
     _nameCtrl = TextEditingController(text: user?.name ?? '');
     _phoneCtrl = TextEditingController(text: user?.phone ?? '');
+    _emailCtrl = TextEditingController(text: user?.email ?? '');
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
+    _emailCtrl.dispose();
     super.dispose();
   }
 
@@ -103,15 +106,20 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
-    // TODO: Cập nhật vào SQLite / Backend khi tích hợp
-    await Future.delayed(const Duration(milliseconds: 800));
+    final success = await context.read<AuthCubit>().updateProfile(
+          name: _nameCtrl.text.trim(),
+          email: _emailCtrl.text.trim(),
+          phone: _phoneCtrl.text.trim(),
+        );
 
     if (mounted) {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Đã lưu thay đổi thành công!'),
-          backgroundColor: AppColors.success,
+        SnackBar(
+          content: Text(success
+              ? '✅ Đã lưu thay đổi thông tin Admin thành công!'
+              : '❌ Lưu thay đổi thất bại, vui lòng thử lại!'),
+          backgroundColor: success ? AppColors.success : AppColors.error,
         ),
       );
     }
@@ -119,65 +127,147 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 
   /// Dialog đổi mật khẩu
   void _showChangePasswordDialog() {
+    final formKey = GlobalKey<FormState>();
     final currentPassCtrl = TextEditingController();
     final newPassCtrl = TextEditingController();
     final confirmPassCtrl = TextEditingController();
+    bool isSaving = false;
+    bool obscureOld = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Đổi mật khẩu'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: currentPassCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Mật khẩu hiện tại',
-                prefixIcon: Icon(Icons.lock_outline),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.lock_reset_rounded, color: AppColors.primary),
+              SizedBox(width: 8),
+              Text('Đổi mật khẩu'),
+            ],
+          ),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextFormField(
+                    controller: currentPassCtrl,
+                    obscureText: obscureOld,
+                    decoration: InputDecoration(
+                      labelText: 'Mật khẩu hiện tại *',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscureOld
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                        onPressed: () =>
+                            setDialogState(() => obscureOld = !obscureOld),
+                      ),
+                    ),
+                    validator: (v) => (v == null || v.isEmpty)
+                        ? 'Vui lòng nhập mật khẩu hiện tại'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: newPassCtrl,
+                    obscureText: obscureNew,
+                    decoration: InputDecoration(
+                      labelText: 'Mật khẩu mới (tối thiểu 8 ký tự) *',
+                      prefixIcon: const Icon(Icons.lock_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscureNew
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                        onPressed: () =>
+                            setDialogState(() => obscureNew = !obscureNew),
+                      ),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) {
+                        return 'Vui lòng nhập mật khẩu mới';
+                      }
+                      if (v.length < 8) {
+                        return 'Mật khẩu phải từ 8 ký tự trở lên';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: confirmPassCtrl,
+                    obscureText: obscureConfirm,
+                    decoration: InputDecoration(
+                      labelText: 'Xác nhận mật khẩu mới *',
+                      prefixIcon: const Icon(Icons.lock_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscureConfirm
+                            ? Icons.visibility_off
+                            : Icons.visibility),
+                        onPressed: () => setDialogState(
+                            () => obscureConfirm = !obscureConfirm),
+                      ),
+                    ),
+                    validator: (v) {
+                      if (v == null || v.isEmpty) {
+                        return 'Vui lòng xác nhận mật khẩu';
+                      }
+                      if (v != newPassCtrl.text) {
+                        return 'Mật khẩu xác nhận không khớp';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: newPassCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Mật khẩu mới',
-                prefixIcon: Icon(Icons.lock_rounded),
-              ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSaving ? null : () => Navigator.pop(ctx),
+              child: const Text('Hủy'),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: confirmPassCtrl,
-              obscureText: true,
-              decoration: const InputDecoration(
-                labelText: 'Xác nhận mật khẩu mới',
-                prefixIcon: Icon(Icons.lock_rounded),
-              ),
+            ElevatedButton(
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setDialogState(() => isSaving = true);
+
+                      final success =
+                          await context.read<AuthCubit>().changePassword(
+                                oldPassword: currentPassCtrl.text.trim(),
+                                newPassword: newPassCtrl.text.trim(),
+                              );
+
+                      if (context.mounted) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(success
+                                ? '✅ Đổi mật khẩu thành công!'
+                                : '❌ Đổi mật khẩu thất bại, kiểm tra lại mật khẩu cũ!'),
+                            backgroundColor:
+                                success ? AppColors.success : AppColors.error,
+                          ),
+                        );
+                      }
+                    },
+              child: isSaving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Lưu'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Hủy'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              // TODO: Validate và cập nhật mật khẩu trong SQLite
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Đổi mật khẩu thành công!'),
-                  backgroundColor: AppColors.success,
-                ),
-              );
-            },
-            child: const Text('Lưu'),
-          ),
-        ],
       ),
     );
   }
@@ -369,16 +459,21 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                     ),
                     const SizedBox(height: 14),
 
-                    // Email (readonly)
+                    // Gmail / Email đăng nhập
                     TextFormField(
-                      initialValue: user?.email ?? '',
-                      readOnly: true,
-                      decoration: InputDecoration(
-                        labelText: 'Email (không thể sửa)',
-                        prefixIcon: const Icon(Icons.email_outlined),
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Gmail đăng nhập *',
+                        prefixIcon: Icon(Icons.email_outlined),
                       ),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) {
+                          return 'Vui lòng nhập email';
+                        }
+                        if (!v.contains('@')) return 'Email không hợp lệ';
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 20),
 

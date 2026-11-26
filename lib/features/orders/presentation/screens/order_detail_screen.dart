@@ -98,21 +98,12 @@ class OrderDetailScreen extends StatelessWidget {
         final displayOrder = order ??
             OrderModel(
               id: orderId,
-              userId: 'user_01',
-              items: const [
-                OrderItem(
-                  bookId: 'book_001',
-                  title: 'Đắc Nhân Tâm',
-                  price: 86000,
-                  quantity: 1,
-                  imageUrl: 'https://picsum.photos/seed/book1/300/450',
-                ),
-              ],
-              totalAmount: 116000,
+              userId: '',
+              items: const [],
+              totalAmount: 0,
               status: AppConstants.orderPending,
               paymentMethod: AppConstants.paymentCOD,
-              shippingAddress:
-                  'Khu II, Đ. 3/2, P. Xuân Khánh, Q. Ninh Kiều, Cần Thơ',
+              shippingAddress: '',
               createdAt: DateTime.now(),
             );
 

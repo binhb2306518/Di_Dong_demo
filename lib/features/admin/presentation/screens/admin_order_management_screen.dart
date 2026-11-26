@@ -43,6 +43,7 @@ class _AdminOrderManagementScreenState
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    context.read<OrderBloc>().add(const LoadOrders());
   }
 
   @override
@@ -75,25 +76,37 @@ class _AdminOrderManagementScreenState
       ),
       body: BlocBuilder<OrderBloc, OrderState>(
         builder: (context, state) {
-          return TabBarView(
-            controller: _tabController,
-            children: _tabs.map((status) {
-              final filtered =
-                  state.orders.where((o) => o.status == status).toList();
-              if (filtered.isEmpty) {
-                return _EmptyOrderTab(status: status);
-              }
-              return ListView.builder(
-                padding: const EdgeInsets.all(14),
-                itemCount: filtered.length,
-                itemBuilder: (context, index) {
-                  return _AdminOrderCard(
-                    order: filtered[index],
-                    currentStatus: status,
+          return RefreshIndicator(
+            onRefresh: () async {
+              context.read<OrderBloc>().add(const LoadOrders());
+            },
+            child: TabBarView(
+              controller: _tabController,
+              children: _tabs.map((status) {
+                final filtered =
+                    state.orders.where((o) => o.status == status).toList();
+                if (filtered.isEmpty) {
+                  return ListView(
+                    children: [
+                      SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.4,
+                        child: _EmptyOrderTab(status: status),
+                      ),
+                    ],
                   );
-                },
-              );
-            }).toList(),
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.all(14),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    return _AdminOrderCard(
+                      order: filtered[index],
+                      currentStatus: status,
+                    );
+                  },
+                );
+              }).toList(),
+            ),
           );
         },
       ),

@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/database/database_helper.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../../services/pocketbase_book_service.dart';
 import '../../data/mock_book_data.dart';
 import '../../data/models/book_model.dart';
 
@@ -37,7 +38,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _loadBooksAndHistory() async {
     try {
-      final books = await DatabaseHelper.instance.getAllBooks();
+      final books = await PocketBaseBookService.instance.getAllBooks();
       final history = await DatabaseHelper.instance.getSearchHistory();
       if (mounted) {
         setState(() {

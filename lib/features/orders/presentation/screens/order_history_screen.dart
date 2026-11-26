@@ -8,6 +8,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../data/models/order_model.dart';
 import '../bloc/order_bloc.dart';
+import '../bloc/order_event.dart';
 import '../bloc/order_state.dart';
 
 /// Màn hình Lịch sử Đơn hàng – kết nối OrderBloc
@@ -34,6 +35,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    context.read<OrderBloc>().add(const LoadOrders());
   }
 
   @override
@@ -81,32 +83,44 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen>
               tabs: _tabs.map((t) => Tab(text: t)).toList(),
             ),
           ),
-          body: TabBarView(
-            controller: _tabController,
-            children: List.generate(_tabs.length, (tabIndex) {
-              final orders = _filterOrders(state.orders, tabIndex);
-              if (orders.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+          body: RefreshIndicator(
+            onRefresh: () async {
+              context.read<OrderBloc>().add(const LoadOrders());
+            },
+            child: TabBarView(
+              controller: _tabController,
+              children: List.generate(_tabs.length, (tabIndex) {
+                final orders = _filterOrders(state.orders, tabIndex);
+                if (orders.isEmpty) {
+                  return ListView(
                     children: [
-                      Icon(Icons.receipt_long_outlined,
-                          size: 64, color: Colors.grey.shade300),
-                      const SizedBox(height: 12),
-                      Text('Chưa có đơn hàng nào',
-                          style: TextStyle(color: Colors.grey.shade500)),
+                      SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.4,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.receipt_long_outlined,
+                                  size: 64, color: Colors.grey.shade300),
+                              const SizedBox(height: 12),
+                              Text('Chưa có đơn hàng nào',
+                                  style: TextStyle(color: Colors.grey.shade500)),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
-                  ),
+                  );
+                }
+                return ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: orders.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) =>
+                      _OrderCard(order: orders[index]),
                 );
-              }
-              return ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: orders.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (context, index) =>
-                    _OrderCard(order: orders[index]),
-              );
-            }),
+              }),
+            ),
           ),
         );
       },

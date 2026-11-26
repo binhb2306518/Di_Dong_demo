@@ -173,86 +173,99 @@ class _AdminAddEditBookScreenState extends State<AdminAddEditBookScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
-    final price =
-        double.tryParse(_priceCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
-    final origPriceText = _originalPriceCtrl.text.replaceAll(',', '').trim();
-    final origPrice = origPriceText.isNotEmpty
-        ? (double.tryParse(origPriceText) ?? price)
-        : price;
-    final stock = int.tryParse(_stockCtrl.text.trim()) ?? 1;
-    final pages = int.tryParse(_pageCountCtrl.text.trim()) ?? 100;
+    try {
+      final price =
+          double.tryParse(_priceCtrl.text.replaceAll(',', '').trim()) ?? 0.0;
+      final origPriceText = _originalPriceCtrl.text.replaceAll(',', '').trim();
+      final origPrice = origPriceText.isNotEmpty
+          ? (double.tryParse(origPriceText) ?? price)
+          : price;
+      final stock = int.tryParse(_stockCtrl.text.trim()) ?? 1;
+      final pages = int.tryParse(_pageCountCtrl.text.trim()) ?? 100;
 
-    int discount = 0;
-    if (origPrice > price && origPrice > 0) {
-      discount = (((origPrice - price) / origPrice) * 100).round();
-    }
-
-    // Xác định đường dẫn ảnh bìa
-    String coverPath = '';
-    if (_coverImageFile != null) {
-      coverPath = _coverImageFile!.path; // File local path
-    } else if (_existingCoverUrl.isNotEmpty) {
-      coverPath = _existingCoverUrl;
-    }
-
-    if (_isEdit) {
-      final updated = widget.book!.copyWith(
-        title: _titleCtrl.text.trim(),
-        author: _authorCtrl.text.trim(),
-        category: _selectedCategory,
-        price: price,
-        originalPrice: origPrice,
-        discountPercent: discount,
-        stockQuantity: stock,
-        pageCount: pages,
-        publisher: _publisherCtrl.text.trim(),
-        coverImage: coverPath,
-        description: _descCtrl.text.trim(),
-        sampleContent: _sampleCtrl.text.trim(),
-      );
-
-      await context.read<BookCubit>().updateBook(updated);
-
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Đã cập nhật "${updated.title}" thành công!'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        context.pop();
+      int discount = 0;
+      if (origPrice > price && origPrice > 0) {
+        discount = (((origPrice - price) / origPrice) * 100).round();
       }
-    } else {
-      final newBook = Book(
-        id: 'book_${DateTime.now().millisecondsSinceEpoch}',
-        title: _titleCtrl.text.trim(),
-        author: _authorCtrl.text.trim(),
-        category: _selectedCategory,
-        price: price,
-        originalPrice: origPrice,
-        discountPercent: discount,
-        stockQuantity: stock,
-        pageCount: pages,
-        publisher: _publisherCtrl.text.trim(),
-        coverImage: coverPath,
-        description: _descCtrl.text.trim(),
-        sampleContent: _sampleCtrl.text.trim(),
-        rating: 5.0,
-        reviewCount: 0,
-      );
 
-      await context.read<BookCubit>().addBook(newBook);
+      // Xác định đường dẫn ảnh bìa
+      String coverPath = '';
+      if (_coverImageFile != null) {
+        coverPath = _coverImageFile!.path; // File local path
+      } else if (_existingCoverUrl.isNotEmpty) {
+        coverPath = _existingCoverUrl;
+      }
 
+      if (_isEdit) {
+        final updated = widget.book!.copyWith(
+          title: _titleCtrl.text.trim(),
+          author: _authorCtrl.text.trim(),
+          category: _selectedCategory,
+          price: price,
+          originalPrice: origPrice,
+          discountPercent: discount,
+          stockQuantity: stock,
+          pageCount: pages,
+          publisher: _publisherCtrl.text.trim(),
+          coverImage: coverPath,
+          description: _descCtrl.text.trim(),
+          sampleContent: _sampleCtrl.text.trim(),
+        );
+
+        await context.read<BookCubit>().updateBook(updated, imageFile: _coverImageFile);
+
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Đã cập nhật "${updated.title}" thành công!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          context.pop();
+        }
+      } else {
+        final newBook = Book(
+          id: '',
+          title: _titleCtrl.text.trim(),
+          author: _authorCtrl.text.trim(),
+          category: _selectedCategory,
+          price: price,
+          originalPrice: origPrice,
+          discountPercent: discount,
+          stockQuantity: stock,
+          pageCount: pages,
+          publisher: _publisherCtrl.text.trim(),
+          coverImage: coverPath,
+          description: _descCtrl.text.trim(),
+          sampleContent: _sampleCtrl.text.trim(),
+          rating: 5.0,
+          reviewCount: 0,
+        );
+
+        await context.read<BookCubit>().addBook(newBook, imageFile: _coverImageFile);
+
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Đã thêm "${newBook.title}" vào kho thành công!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+          context.pop();
+        }
+      }
+    } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✅ Đã thêm "${newBook.title}" vào kho thành công!'),
-            backgroundColor: AppColors.success,
+            content: Text('❌ Lỗi khi lưu sách: ${e.toString()}'),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
           ),
         );
-        context.pop();
       }
     }
   }

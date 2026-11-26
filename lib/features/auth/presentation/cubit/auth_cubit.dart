@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../../core/database/database_helper.dart';
+import '../../../../services/pocketbase_auth_service.dart';
 import '../../data/models/user_model.dart';
 
 enum AuthStatus { initial, loading, authenticated, unauthenticated, error }
@@ -43,7 +43,12 @@ class AuthCubit extends Cubit<AuthState> {
   static const String _userKey = 'current_user_session';
 
   AuthCubit._internal() : super(const AuthState()) {
-    checkAuth();
+    _init();
+  }
+
+  Future<void> _init() async {
+    await PocketBaseAuthService.instance.seedDefaultUsersIfEmpty();
+    await checkAuth();
   }
 
   factory AuthCubit() => instance;
@@ -52,9 +57,14 @@ class AuthCubit extends Cubit<AuthState> {
   bool get isAuthenticated => state.isAuthenticated;
   UserModel? get currentUser => state.user;
 
-  /// Kiểm tra phiên đăng nhập đã lưu trong SharedPreferences
+  /// Kiểm tra phiên đăng nhập đã lưu trong SharedPreferences / PocketBase
   Future<void> checkAuth() async {
     try {
+      final pbUser = await PocketBaseAuthService.instance.getCurrentUser();
+      if (pbUser != null) {
+        emit(AuthState(status: AuthStatus.authenticated, user: pbUser));
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       final userJson = prefs.getString(_userKey);
       if (userJson != null) {
@@ -67,11 +77,11 @@ class AuthCubit extends Cubit<AuthState> {
     emit(const AuthState(status: AuthStatus.unauthenticated));
   }
 
-  /// Đăng nhập tài khoản
+  /// Đăng nhập tài khoản qua PocketBase
   Future<bool> login(String email, String password) async {
     emit(state.copyWith(status: AuthStatus.loading));
     try {
-      final user = await DatabaseHelper.instance.login(email, password);
+      final user = await PocketBaseAuthService.instance.login(email, password);
       if (user != null) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_userKey, jsonEncode(user.toJson()));
@@ -93,7 +103,7 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  /// Đăng ký tài khoản người dùng mới (mặc định role = 'user')
+  /// Đăng ký tài khoản người dùng mới trên PocketBase
   Future<bool> register({
     required String name,
     required String email,
@@ -103,7 +113,7 @@ class AuthCubit extends Cubit<AuthState> {
   }) async {
     emit(state.copyWith(status: AuthStatus.loading));
     try {
-      final success = await DatabaseHelper.instance.registerUser(
+      final success = await PocketBaseAuthService.instance.register(
         name: name,
         email: email,
         password: password,
@@ -113,7 +123,7 @@ class AuthCubit extends Cubit<AuthState> {
       if (!success) {
         emit(state.copyWith(
           status: AuthStatus.error,
-          errorMessage: 'Email này đã tồn tại trong hệ thống!',
+          errorMessage: 'Đăng ký thất bại, vui lòng thử lại!',
         ));
         return false;
       }
@@ -131,9 +141,77 @@ class AuthCubit extends Cubit<AuthState> {
   /// Đăng xuất tài khoản
   Future<void> logout() async {
     try {
+      await PocketBaseAuthService.instance.logout();
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_userKey);
     } catch (_) {}
     emit(const AuthState(status: AuthStatus.unauthenticated));
+  }
+
+  /// Cập nhật thông tin cá nhân (Tên, Gmail, Số điện thoại)
+  Future<bool> updateProfile({
+    required String name,
+    required String email,
+    required String phone,
+  }) async {
+    final user = state.user;
+    if (user == null) return false;
+
+    emit(state.copyWith(status: AuthStatus.loading));
+    try {
+      UserModel updatedUser;
+      try {
+        updatedUser = await PocketBaseAuthService.instance.updateProfile(
+          id: user.id,
+          name: name,
+          email: email,
+          phone: phone,
+        );
+      } catch (_) {
+        updatedUser = UserModel(
+          id: user.id,
+          name: name,
+          email: email,
+          phone: phone,
+          role: user.role,
+          avatarUrl: user.avatarUrl,
+        );
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_userKey, jsonEncode(updatedUser.toJson()));
+
+      emit(AuthState(status: AuthStatus.authenticated, user: updatedUser));
+      return true;
+    } catch (e) {
+      emit(state.copyWith(
+        status: AuthStatus.authenticated,
+        errorMessage: 'Lỗi cập nhật thông tin: ${e.toString()}',
+      ));
+      return false;
+    }
+  }
+
+  /// Đổi mật khẩu tài khoản
+  Future<bool> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final user = state.user;
+    if (user == null) return false;
+
+    try {
+      await PocketBaseAuthService.instance.changePassword(
+        id: user.id,
+        oldPassword: oldPassword,
+        newPassword: newPassword,
+      );
+      return true;
+    } catch (e) {
+      emit(state.copyWith(
+        errorMessage: 'Đổi mật khẩu thất bại: ${e.toString()}',
+      ));
+      return false;
+    }
   }
 }

@@ -322,6 +322,32 @@ class DatabaseHelper {
     return null;
   }
 
+  Future<int> updateUserProfile(String id, String name, String email, String phone) async {
+    final db = await database;
+    return await db.update(
+      'users',
+      {
+        'name': name.trim(),
+        'email': email.toLowerCase().trim(),
+        'phone': phone.trim(),
+      },
+      where: 'id = ? OR email = ?',
+      whereArgs: [id, email.toLowerCase().trim()],
+    );
+  }
+
+  Future<int> updateUserPassword(String id, String newPassword) async {
+    final db = await database;
+    return await db.update(
+      'users',
+      {
+        'password': newPassword,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   // ================= CART OPERATIONS =================
   Future<List<CartItem>> getCartItems() async {
     final db = await database;

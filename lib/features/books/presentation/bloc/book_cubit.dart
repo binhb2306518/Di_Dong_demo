@@ -1,6 +1,7 @@
+import 'dart:io';
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../../../core/database/database_helper.dart';
+import '../../../../services/pocketbase_book_service.dart';
 import '../../data/models/book_model.dart';
 
 enum BookStatus { initial, loading, loaded, error }
@@ -41,35 +42,39 @@ class BookCubit extends Cubit<BookState> {
 
   factory BookCubit() => instance;
 
-  /// Tải toàn bộ danh sách sách từ SQLite
+  /// Tải toàn bộ danh sách sách từ PocketBase
   Future<void> loadBooks() async {
     emit(state.copyWith(status: BookStatus.loading));
     try {
-      final list = await DatabaseHelper.instance.getAllBooks();
+      var list = await PocketBaseBookService.instance.getAllBooks();
+      if (list.isEmpty) {
+        await PocketBaseBookService.instance.seedSampleBooksIfEmpty();
+        list = await PocketBaseBookService.instance.getAllBooks();
+      }
       emit(state.copyWith(status: BookStatus.loaded, books: list));
     } catch (e) {
       emit(state.copyWith(
         status: BookStatus.error,
-        errorMessage: 'Lỗi tải sách: ${e.toString()}',
+        errorMessage: 'Lỗi tải sách từ PocketBase: ${e.toString()}',
       ));
     }
   }
 
-  /// Thêm sách mới vào SQLite
-  Future<void> addBook(Book book) async {
-    await DatabaseHelper.instance.insertBook(book);
+  /// Thêm sách mới lên PocketBase
+  Future<void> addBook(Book book, {File? imageFile}) async {
+    await PocketBaseBookService.instance.insertBook(book, imageFile: imageFile);
     await loadBooks();
   }
 
-  /// Cập nhật sách trong SQLite
-  Future<void> updateBook(Book book) async {
-    await DatabaseHelper.instance.updateBook(book);
+  /// Cập nhật sách trên PocketBase
+  Future<void> updateBook(Book book, {File? imageFile}) async {
+    await PocketBaseBookService.instance.updateBook(book, imageFile: imageFile);
     await loadBooks();
   }
 
-  /// Xóa sách khỏi SQLite
+  /// Xóa sách khỏi PocketBase
   Future<void> deleteBook(String id) async {
-    await DatabaseHelper.instance.deleteBook(id);
+    await PocketBaseBookService.instance.deleteBook(id);
     await loadBooks();
   }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/app_constants.dart';
-import '../../../../core/database/database_helper.dart';
 import '../../../../core/services/notification_service.dart';
+import '../../../../services/pocketbase_order_service.dart';
 import '../../data/models/order_model.dart';
 import 'order_event.dart';
 import 'order_state.dart';
@@ -23,12 +23,12 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
       LoadOrders event, Emitter<OrderState> emit) async {
     emit(state.copyWith(status: OrderStatusState.loading));
     try {
-      final orders = await DatabaseHelper.instance.getAllOrders();
+      final orders = await PocketBaseOrderService.instance.getAllOrders();
       emit(state.copyWith(status: OrderStatusState.loaded, orders: orders));
     } catch (e) {
       emit(state.copyWith(
         status: OrderStatusState.error,
-        errorMessage: 'Lỗi tải đơn hàng: ${e.toString()}',
+        errorMessage: 'Lỗi tải đơn hàng từ PocketBase: ${e.toString()}',
       ));
     }
   }
@@ -37,19 +37,19 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
       CreateOrderEvent event, Emitter<OrderState> emit) async {
     emit(state.copyWith(status: OrderStatusState.loading));
     try {
-      await DatabaseHelper.instance.insertOrder(event.order);
-      final updatedOrders = [event.order, ...state.orders];
+      final createdOrder = await PocketBaseOrderService.instance.insertOrder(event.order);
+      final updatedOrders = [createdOrder, ...state.orders];
       emit(state.copyWith(
         status: OrderStatusState.success,
         orders: updatedOrders,
-        lastCreatedOrder: event.order,
-        message: 'Đặt hàng thành công! Mã đơn: #${event.order.id}',
+        lastCreatedOrder: createdOrder,
+        message: 'Đặt hàng thành công! Mã đơn: #${createdOrder.id}',
       ));
 
       // Bắn Local Notification thông báo tức thì lên thanh trạng thái Android
       await _notificationService.showOrderSuccessNotification(
-        orderId: event.order.id,
-        totalAmount: event.order.totalAmount,
+        orderId: createdOrder.id,
+        totalAmount: createdOrder.totalAmount,
       );
     } catch (e) {
       emit(state.copyWith(
@@ -61,7 +61,7 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
 
   Future<void> _onCancelOrder(
       CancelOrderEvent event, Emitter<OrderState> emit) async {
-    await DatabaseHelper.instance.updateOrderStatus(
+    await PocketBaseOrderService.instance.updateOrderStatus(
       event.orderId,
       AppConstants.orderCancelled,
     );
@@ -80,7 +80,7 @@ class OrderBloc extends Bloc<OrderEvent, OrderState> {
 
   Future<void> _onUpdateOrderStatus(
       UpdateOrderStatusEvent event, Emitter<OrderState> emit) async {
-    await DatabaseHelper.instance.updateOrderStatus(
+    await PocketBaseOrderService.instance.updateOrderStatus(
       event.orderId,
       event.newStatus,
     );

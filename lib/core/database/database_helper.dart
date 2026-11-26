@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import '../../features/cart/data/models/cart_item_model.dart';
 import '../../features/auth/data/models/address_model.dart';
 import '../../features/auth/data/models/user_model.dart';
 import '../../features/books/data/models/book_model.dart';
+import '../../features/orders/data/models/order_model.dart';
 
 /// Quản lý SQLite cục bộ cho ứng dụng BookVerse
 class DatabaseHelper {
@@ -24,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 4,
       onCreate: _createDB,
       onUpgrade: _onUpgrade,
     );
@@ -85,6 +87,9 @@ class DatabaseHelper {
 
     // 6. Bảng Người dùng (Users) - Phân quyền 'admin' / 'user'
     await _createUsersTable(db);
+
+    // 7. Bảng Đơn hàng (Orders)
+    await _createOrdersTable(db);
 
     // Khởi tạo một số địa chỉ mẫu ban đầu
     await db.insert('addresses', {
@@ -166,6 +171,27 @@ class DatabaseHelper {
     );
   }
 
+  Future<void> _createOrdersTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS orders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        order_date TEXT NOT NULL,
+        items_json TEXT NOT NULL,
+        total_amount REAL NOT NULL,
+        shipping_fee REAL DEFAULT 0,
+        discount_amount REAL DEFAULT 0,
+        payment_method TEXT NOT NULL,
+        status TEXT NOT NULL,
+        shipping_address TEXT NOT NULL
+      )
+    ''');
+
+    // Xóa sạch tất cả các đơn hàng mẫu mặc định cũ
+    await db.delete('orders',
+        where: "id IN ('BK98421', 'BK98500', 'BK97800', 'BK97302', 'BK96500', 'BK97000')");
+  }
+
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _createBooksTable(db);
@@ -176,6 +202,14 @@ class DatabaseHelper {
           where: 'book_id IN (?, ?, ?)',
           whereArgs: ['book_001', 'book_002', 'book_004']);
       await db.delete('wishlist', where: 'book_id = ?', whereArgs: ['book_002']);
+    }
+    if (oldVersion < 3) {
+      await _createOrdersTable(db);
+    }
+    if (oldVersion < 4) {
+      // Xóa sạch các đơn mẫu mặc định
+      await db.delete('orders',
+          where: "id IN ('BK98421', 'BK98500', 'BK97800', 'BK97302', 'BK96500', 'BK97000')");
     }
   }
 
@@ -441,6 +475,88 @@ class DatabaseHelper {
   Future<void> clearSearchHistory() async {
     final db = await database;
     await db.delete('search_history');
+  }
+
+  // ================= ORDERS CRUD OPERATIONS =================
+  Future<List<Order>> getAllOrders() async {
+    final db = await database;
+    await _createOrdersTable(db);
+    final maps = await db.query('orders', orderBy: 'order_date DESC');
+    return maps.map((row) => _mapRowToOrder(row)).toList();
+  }
+
+  Future<List<Order>> getOrdersByUserId(String userId) async {
+    final db = await database;
+    await _createOrdersTable(db);
+    final maps = await db.query(
+      'orders',
+      where: 'user_id = ?',
+      whereArgs: [userId],
+      orderBy: 'order_date DESC',
+    );
+    return maps.map((row) => _mapRowToOrder(row)).toList();
+  }
+
+  Future<int> insertOrder(Order order) async {
+    final db = await database;
+    await _createOrdersTable(db);
+    return await db.insert(
+      'orders',
+      {
+        'id': order.id,
+        'user_id': order.userId,
+        'order_date': order.orderDate.toIso8601String(),
+        'items_json': jsonEncode(order.items.map((e) => e.toJson()).toList()),
+        'total_amount': order.totalAmount,
+        'shipping_fee': order.shippingFee,
+        'discount_amount': order.discountAmount,
+        'payment_method': order.paymentMethod,
+        'status': order.status,
+        'shipping_address': order.shippingAddress,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<int> updateOrderStatus(String orderId, String newStatus) async {
+    final db = await database;
+    await _createOrdersTable(db);
+    return await db.update(
+      'orders',
+      {'status': newStatus},
+      where: 'id = ?',
+      whereArgs: [orderId],
+    );
+  }
+
+  Future<int> deleteOrder(String orderId) async {
+    final db = await database;
+    await _createOrdersTable(db);
+    return await db.delete('orders', where: 'id = ?', whereArgs: [orderId]);
+  }
+
+  Order _mapRowToOrder(Map<String, dynamic> row) {
+    List<OrderItem> itemsList = [];
+    try {
+      final rawJson = row['items_json'] as String? ?? '[]';
+      final decoded = jsonDecode(rawJson) as List<dynamic>;
+      itemsList = decoded
+          .map((item) => OrderItem.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (_) {}
+
+    return Order(
+      id: row['id'] as String? ?? '',
+      userId: row['user_id'] as String? ?? '',
+      orderDate: DateTime.tryParse(row['order_date'] as String? ?? '') ?? DateTime.now(),
+      items: itemsList,
+      totalAmount: (row['total_amount'] as num?)?.toDouble() ?? 0.0,
+      shippingFee: (row['shipping_fee'] as num?)?.toDouble() ?? 0.0,
+      discountAmount: (row['discount_amount'] as num?)?.toDouble() ?? 0.0,
+      paymentMethod: row['payment_method'] as String? ?? 'COD',
+      status: row['status'] as String? ?? 'Pending',
+      shippingAddress: row['shipping_address'] as String? ?? '',
+    );
   }
 
   Future<void> close() async {
